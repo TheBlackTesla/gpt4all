@@ -75,20 +75,18 @@ Q_SIGNALS:
     void isModelLoadedChanged();
     void modelLoadingError(const QString &error);
     void responseChanged();
-    void responseStarted();
+    void promptProcessing();
     void responseStopped();
     void modelNameChanged();
     void recalcChanged();
     void sendStartup();
     void sendModelLoaded();
-    void sendResetContext();
     void generatedNameChanged();
     void stateChanged();
     void threadStarted();
     void shouldBeLoadedChanged();
 
 protected:
-    void resetContextProtected();
     bool handlePrompt(int32_t token);
     bool handleResponse(int32_t token, const std::string &response);
     bool handleRecalculate(bool isRecalc);

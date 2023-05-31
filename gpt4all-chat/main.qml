@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
 import llm
 import download
 import network
@@ -136,67 +137,17 @@ Window {
                 horizontalAlignment: TextInput.AlignRight
             }
 
-            ComboBox {
+            MyComboBox {
                 id: comboBox
                 width: 350
                 anchors.top: modelLabel.top
                 anchors.bottom: modelLabel.bottom
                 anchors.horizontalCenter: parent.horizontalCenter
                 enabled: !currentChat.isServer
-                font.pixelSize: theme.fontSizeLarge
-                spacing: 0
                 model: currentChat.modelList
                 Accessible.role: Accessible.ComboBox
                 Accessible.name: qsTr("ComboBox for displaying/picking the current model")
                 Accessible.description: qsTr("Use this for picking the current model to use; the first item is the current model")
-                contentItem: Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    leftPadding: 10
-                    rightPadding: 10
-                    text: comboBox.displayText
-                    font: comboBox.font
-                    color: theme.textColor
-                    verticalAlignment: Text.AlignVCenter
-                    horizontalAlignment: Text.AlignHCenter
-                    elide: Text.ElideRight
-                }
-                delegate: ItemDelegate {
-                    width: comboBox.width
-                    contentItem: Text {
-                        text: modelData
-                        color: theme.textColor
-                        font: comboBox.font
-                        elide: Text.ElideRight
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    background: Rectangle {
-                        color: highlighted ? theme.backgroundLight : theme.backgroundDark
-                    }
-                    highlighted: comboBox.highlightedIndex === index
-                }
-                popup: Popup {
-                    y: comboBox.height - 1
-                    width: comboBox.width
-                    implicitHeight: contentItem.implicitHeight
-                    padding: 0
-
-                    contentItem: ListView {
-                        clip: true
-                        implicitHeight: contentHeight
-                        model: comboBox.popup.visible ? comboBox.delegateModel : null
-                        currentIndex: comboBox.highlightedIndex
-                        ScrollIndicator.vertical: ScrollIndicator { }
-                    }
-
-                    background: Rectangle {
-                        color: theme.backgroundDark
-                    }
-                }
-
-                background: Rectangle {
-                    color: theme.backgroundDark
-                }
-
                 onActivated: {
                     currentChat.stopGenerating()
                     currentChat.reset();
@@ -205,13 +156,27 @@ Window {
             }
         }
 
-        BusyIndicator {
+        Item {
             anchors.centerIn: parent
             visible: !currentChat.isModelLoaded && !currentChat.isServer
-            running: !currentChat.isModelLoaded && !currentChat.isServer
-            Accessible.role: Accessible.Animation
-            Accessible.name: qsTr("Busy indicator")
-            Accessible.description: qsTr("Displayed when the model is loading")
+            width: childrenRect.width
+            height: childrenRect.height
+            Row {
+                spacing: 5
+                BusyIndicator {
+                    anchors.verticalCenter: parent.verticalCenter
+                    running: parent.visible
+                    Accessible.role: Accessible.Animation
+                    Accessible.name: qsTr("Busy indicator")
+                    Accessible.description: qsTr("Displayed when the model is loading")
+                }
+
+                Label {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Loading model...")
+                    color: theme.mutedTextColor
+                }
+            }
         }
     }
 
@@ -337,9 +302,53 @@ Window {
         }
     }
 
+    CollectionsDialog {
+        id: collectionsDialog
+        anchors.centerIn: parent
+    }
+
+    Button {
+        id: collectionsButton
+        anchors.right: networkButton.left
+        anchors.top: parent.top
+        anchors.topMargin: 30
+        anchors.rightMargin: 30
+        width: 40
+        height: 40
+        z: 200
+        padding: 15
+
+        background: Item {
+            anchors.fill: parent
+            Rectangle {
+                anchors.fill: parent
+                color: "transparent"
+                visible: currentChat.collectionList.length
+                border.color: theme.backgroundLightest
+                border.width: 1
+                radius: 10
+            }
+            Image {
+                anchors.centerIn: parent
+                mipmap: true
+                width: 25
+                height: 25
+                source: "qrc:/gpt4all/icons/db.svg"
+            }
+        }
+
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("Add collections of documents to the chat")
+        Accessible.description: qsTr("Provides a button to add collections of documents to the chat")
+
+        onClicked: {
+            collectionsDialog.open()
+        }
+    }
+
     Button {
         id: settingsButton
-        anchors.right: networkButton.left
+        anchors.right: collectionsButton.left
         anchors.top: parent.top
         anchors.topMargin: 30
         anchors.rightMargin: 30
@@ -558,6 +567,14 @@ Window {
         }
     }
 
+    PopupDialog {
+        id: referenceContextDialog
+        anchors.centerIn: parent
+        shouldTimeOut: false
+        shouldShowBusy: false
+        modal: true
+    }
+
     Rectangle {
         id: conversation
         color: theme.backgroundLight
@@ -577,17 +594,7 @@ Window {
 
             Rectangle {
                 anchors.fill: parent
-                color: currentChat.isServer ? theme.backgroundDark : theme.backgroundLighter
-
-                Image {
-                    visible: currentChat.isServer || currentChat.modelName.startsWith("chatgpt-")
-                    anchors.fill: parent
-                    sourceSize.width: 1024
-                    sourceSize.height: 1024
-                    fillMode: Image.PreserveAspectFit
-                    opacity: 0.15
-                    source: "qrc:/gpt4all/icons/network.svg"
-                }
+                color: currentChat.isServer ? theme.backgroundDark : theme.backgroundLight
 
                 ListView {
                     id: listView
@@ -599,17 +606,18 @@ Window {
                     Accessible.description: qsTr("This is the list of prompt/response pairs comprising the actual conversation with the model")
 
                     delegate: TextArea {
-                        text: value
+                        text: value + references
                         width: listView.width
                         color: theme.textColor
                         wrapMode: Text.WordWrap
+                        textFormat: TextEdit.MarkdownText
                         focus: false
                         readOnly: true
                         font.pixelSize: theme.fontSizeLarge
                         cursorVisible: currentResponse ? currentChat.responseInProgress : false
                         cursorPosition: text.length
                         background: Rectangle {
-                            opacity: 0.3
+                            opacity: 1.0
                             color: name === qsTr("Response: ")
                                 ? (currentChat.isServer ? theme.backgroundDarkest : theme.backgroundLighter)
                                 : (currentChat.isServer ? theme.backgroundDark : theme.backgroundLight)
@@ -621,27 +629,45 @@ Window {
 
                         topPadding: 20
                         bottomPadding: 20
-                        leftPadding: 100
+                        leftPadding: 70
                         rightPadding: 100
 
-                        BusyIndicator {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 90
-                            anchors.top: parent.top
-                            anchors.topMargin: 5
-                            visible: (currentResponse ? true : false) && value === "" && currentChat.responseInProgress
-                            running: (currentResponse ? true : false) && value === "" && currentChat.responseInProgress
+                        onLinkActivated: function (link) {
+                            if (!link.startsWith("context://"))
+                                return
+                            var integer = parseInt(link.split("://")[1]);
+                            referenceContextDialog.text = referencesContext[integer - 1];
+                            referenceContextDialog.open();
+                        }
 
-                            Accessible.role: Accessible.Animation
-                            Accessible.name: qsTr("Busy indicator")
-                            Accessible.description: qsTr("Displayed when the model is thinking")
+                        Item {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 60
+                            y: parent.topPadding + (parent.positionToRectangle(0).height / 2) - (height / 2)
+                            visible: (currentResponse ? true : false) && value === "" && currentChat.responseInProgress
+                            width: childrenRect.width
+                            height: childrenRect.height
+                            Row {
+                                spacing: 5
+                                BusyIndicator {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    running: (currentResponse ? true : false) && value === "" && currentChat.responseInProgress
+                                    Accessible.role: Accessible.Animation
+                                    Accessible.name: qsTr("Busy indicator")
+                                    Accessible.description: qsTr("Displayed when the model is thinking")
+                                }
+                                Label {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: currentChat.responseState + "..."
+                                    color: theme.mutedTextColor
+                                }
+                            }
                         }
 
                         Rectangle {
                             anchors.left: parent.left
-                            anchors.top: parent.top
                             anchors.leftMargin: 20
-                            anchors.topMargin: 20
+                            y: parent.topPadding + (parent.positionToRectangle(0).height / 2) - (height / 2)
                             width: 30
                             height: 30
                             radius: 5
@@ -680,8 +706,7 @@ Window {
                                 (!currentResponse || !currentChat.responseInProgress) && Network.isActive
                             anchors.right: parent.right
                             anchors.rightMargin: 20
-                            anchors.top: parent.top
-                            anchors.topMargin: 20
+                            y: parent.topPadding + (parent.positionToRectangle(0).height / 2) - (height / 2)
                             spacing: 10
 
                             Item {
@@ -696,6 +721,9 @@ Window {
                                         anchors.fill: parent
                                         source: "qrc:/gpt4all/icons/thumbs_up.svg"
                                     }
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("Thumbs up")
+                                    Accessible.description: qsTr("Gives a thumbs up to the response")
                                     onClicked: {
                                         if (thumbsUpState && !thumbsDownState)
                                             return
@@ -729,6 +757,9 @@ Window {
                                         anchors.fill: parent
                                         source: "qrc:/gpt4all/icons/thumbs_down.svg"
                                     }
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("Thumbs down")
+                                    Accessible.description: qsTr("Opens thumbs down dialog")
                                     onClicked: {
                                         thumbsDownDialog.open()
                                     }
@@ -767,10 +798,20 @@ Window {
                         height: 60
                     }
                 }
+
+                Image {
+                    visible: currentChat.isServer || currentChat.modelName.startsWith("chatgpt-")
+                    anchors.fill: parent
+                    sourceSize.width: 1024
+                    sourceSize.height: 1024
+                    fillMode: Image.PreserveAspectFit
+                    opacity: 0.15
+                    source: "qrc:/gpt4all/icons/network.svg"
+                }
             }
         }
 
-        Button {
+        MyButton {
             visible: chatModel.count && !currentChat.isServer
             Image {
                 anchors.verticalCenter: parent.verticalCenter
@@ -808,22 +849,20 @@ Window {
             }
             anchors.bottom: textInputView.top
             anchors.horizontalCenter: textInputView.horizontalCenter
-            anchors.bottomMargin: 40
+            anchors.bottomMargin: 20
             padding: 15
-            contentItem: Text {
-                text: currentChat.responseInProgress ? qsTr("Stop generating") : qsTr("Regenerate response")
-                color: theme.textColor
-                Accessible.role: Accessible.Button
-                Accessible.name: text
-                Accessible.description: qsTr("Controls generation of the response")
-            }
-            background: Rectangle {
-                opacity: .5
-                border.color: theme.backgroundLightest
-                border.width: 1
-                radius: 10
-                color: theme.backgroundLight
-            }
+            text: currentChat.responseInProgress ? qsTr("Stop generating") : qsTr("Regenerate response")
+            Accessible.description: qsTr("Controls generation of the response")
+        }
+
+        RectangularGlow {
+            id: effect
+            anchors.fill: textInputView
+            glowRadius: 50
+            spread: 0
+            color: theme.backgroundDark
+            cornerRadius: 10
+            opacity: 0.2
         }
 
         ScrollView {
@@ -834,19 +873,20 @@ Window {
             anchors.margins: 30
             height: Math.min(contentHeight, 200)
             visible: !currentChat.isServer
-
             TextArea {
                 id: textInput
-                color: theme.textColor
-                padding: 20
+                color: theme.textAccent
+                topPadding: 30
+                bottomPadding: 30
+                leftPadding: 20
                 rightPadding: 40
                 enabled: currentChat.isModelLoaded && !currentChat.isServer
                 wrapMode: Text.WordWrap
-                font.pixelSize: theme.fontSizeLarge
+                font.pixelSize: theme.fontSizeLarger
                 placeholderText: qsTr("Send a message...")
-                placeholderTextColor: theme.backgroundLightest
+                placeholderTextColor: theme.mutedTextColor
                 background: Rectangle {
-                    color: theme.backgroundLighter
+                    color: theme.backgroundAccent
                     radius: 10
                 }
                 Accessible.role: Accessible.EditableText
